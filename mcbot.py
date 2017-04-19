@@ -23,9 +23,13 @@ class MCBot(object):
 
     def start(self):
         while True:
-            command, channel = self.parse_rtm(self.client.rtm_read())
-            if command and channel:
-                self.handle_msg(command, channel)
+            rtm = self.client.rtm_read()
+            if rtm:
+                command, channel = self.parse_rtm(rtm)
+                if command and channel:
+                    self.handle_msg(command, channel)
+            else:
+                time.sleep(self.delay)
 
     def parse_rtm(self, rtm):
         for msg in rtm:
