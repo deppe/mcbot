@@ -2,7 +2,6 @@ import os
 import re
 import time
 import random
-from textblob import TextBlob
 from slackclient import SlackClient
 from chatterbot import ChatBot
 from chatterbot.trainers import ListTrainer
