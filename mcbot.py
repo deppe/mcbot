@@ -14,18 +14,18 @@ class MCBot(object):
         self.user_id = None
         self.client = SlackClient(token)
         self.chatbot = chatbot
+        self.trainer = Trainer('data.txt')
 
     def connect(self):
         self.client.rtm_connect()
         self.user_id = self.query_user_id('michellecarter')
+        self.train()
 
     def start(self):
-
         while True:
             command, channel = self.parse_rtm(self.client.rtm_read())
             if command and channel:
                 self.handle_msg(command, channel)
-            time.sleep(self.delay)
 
     def parse_rtm(self, rtm):
         for msg in rtm:
@@ -38,8 +38,11 @@ class MCBot(object):
         if channel[0] == 'D' or self.is_mention(text):
             response = self.chatbot.get_response(text)
             self.client.api_call("chat.postMessage", channel=channel, text=str(response), as_user=True)
-            os.remove('database.db')
-            Trainer('data.txt').train(self.chatbot)
+            self.train()
+
+    def train(self):
+        os.remove('database.db')
+        self.trainer.train(self.chatbot)
 
     def is_mention(self, text):
         return re.search('<@' + self.user_id + '>', text)
@@ -56,6 +59,10 @@ class Trainer(object):
         self.filename = filename
 
     def train(self, chatbot):
+        for convo in self.get_next_convo():
+            chatbot.train(convo)
+
+    def get_next_convo(self):
         with open(self.filename) as f:
             M = ''
             F = ''
@@ -64,8 +71,7 @@ class Trainer(object):
 
                 if person == 'M':
                     if F:
-                        chatbot.train([M.strip(), F.strip()])
-                        print ([M, F])
+                        yield [M.strip(), F.strip()]
                         M = ''
                         F = ''
                     M += text + ' '
@@ -75,7 +81,6 @@ class Trainer(object):
 def main():
     chatbot = ChatBot('mcbot')
     chatbot.set_trainer(ListTrainer)
-    Trainer('data.txt').train(chatbot)
     token = os.environ.get('SLACK_BOT_TOKEN')
     bot = MCBot(token, chatbot)
     bot.connect()
