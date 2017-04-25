@@ -64,7 +64,7 @@ class Slacker(object):
     def parse_rtm(self, rtm):
         for msg in rtm:
             print(msg)
-            if msg['type'] == 'message':
+            if msg['type'] == 'message' and msg.get['user']:
                 return msg['text'], msg['channel'], msg['user']
         return None, None, None
 
