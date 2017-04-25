@@ -2,6 +2,7 @@ import os
 import re
 import time
 import random
+import argparse
 from slackclient import SlackClient
 from chatterbot import ChatBot
 from chatterbot.trainers import ListTrainer
@@ -9,38 +10,27 @@ from chatterbot.trainers import ListTrainer
 class MCBot(object):
     def __init__(self, token, chatbot):
         self.token = token
-        self.delay = 1
         self.user_id = None
-        self.client = SlackClient(token)
+        self.slack = Slacker(token)
         self.chatbot = chatbot
         self.trainer = Trainer('data.txt')
 
     def connect(self):
-        self.client.rtm_connect()
+        self.slack.connect()
         self.user_id = self.query_user_id('michellecarter')
         self.train()
 
     def start(self):
-        while True:
-            rtm = self.client.rtm_read()
-            if rtm:
-                command, channel = self.parse_rtm(rtm)
-                if command and channel:
-                    self.handle_msg(command, channel)
-            else:
-                time.sleep(self.delay)
-
-    def parse_rtm(self, rtm):
-        for msg in rtm:
-            print(msg)
-            if msg['type'] == 'message' and msg['user'] != self.user_id:
-                return msg['text'], msg['channel']
-        return None, None
+        for command, channel, user in self.slack.read_rtm():
+            if user != self.user_id:
+                self.handle_msg(command, channel)
 
     def handle_msg(self, text, channel):
+        rand = random.random()
+
         if channel[0] == 'D' or self.is_mention(text):
             response = self.chatbot.get_response(text)
-            self.client.api_call("chat.postMessage", channel=channel, text=str(response), as_user=True)
+            self.slack.post_message(channel, str(response))
             self.train()
 
     def train(self):
@@ -51,11 +41,49 @@ class MCBot(object):
         return re.search('<@' + self.user_id + '>', text)
 
     def query_user_id(self, name):
-        res = self.client.api_call('users.list')
-        for member in res['members']:
-            if member['name'] == name:
-                return member['id']
+        return self.slack.find_user(name)['id']
 
+class Slacker(object):
+    def __init__(self, token):
+        self.client = SlackClient(token)
+        self.delay = 2
+
+    def connect(self):
+        self.client.rtm_connect()
+
+    def read_rtm(self):
+        while True:
+            rtm = self.client.rtm_read()
+            if rtm:
+                command, channel, user = self.parse_rtm(rtm)
+                if command and channel:
+                    yield command, channel, user
+            else:
+                time.sleep(self.delay)
+
+    def parse_rtm(self, rtm):
+        for msg in rtm:
+            print(msg)
+            if msg['type'] == 'message':
+                return msg['text'], msg['channel'], msg['user']
+        return None, None, None
+
+
+    def post_message(self, channel, text):
+        res = self.client.api_call("chat.postMessage", channel=channel, text=text, as_user=True)
+        print(res)
+
+    def list_channels(self):
+        return self.client.api_call('channels.list')['channels']
+
+    def list_users(self):
+        return self.client.api_call('users.list')['members']
+
+    def find_user(self, name):
+        res = self.list_users()
+        for member in res:
+            if member['name'] == name:
+                return member
 
 class Trainer(object):
     def __init__(self, filename):
@@ -81,13 +109,32 @@ class Trainer(object):
                 elif person == 'F':
                     F += text + ' '
 
+def print_slack_list(func):
+    for item in func():
+        print('%s %s' % (item['id'], item['name']))
+
 def main():
-    chatbot = ChatBot('mcbot')
-    chatbot.set_trainer(ListTrainer)
-    token = os.environ.get('SLACK_BOT_TOKEN')
-    bot = MCBot(token, chatbot)
-    bot.connect()
-    bot.start()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-l', '--list', nargs='?', choices=['channels', 'users'])
+    parser.add_argument('-m', '--message')
+    parser.add_argument('-c', '--channel')
+    args = parser.parse_args()
+    print (args)
+
+    token = os.environ['SLACK_BOT_TOKEN']
+
+    if args.list == 'channels':
+        print_slack_list(Slacker(token).list_channels)
+    elif args.list == 'users':
+        print_slack_list(Slacker(token).list_users)
+    elif args.message and args.channel:
+        Slacker(token).post_message(args.channel, args.message)
+    else:
+        chatbot = ChatBot('mcbot')
+        chatbot.set_trainer(ListTrainer)
+        bot = MCBot(token, chatbot)
+        bot.connect()
+        bot.start()
     
 if __name__ == "__main__":
     main()
